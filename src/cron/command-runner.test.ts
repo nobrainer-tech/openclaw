@@ -12,8 +12,8 @@ import type { SpawnResult } from "../process/exec-result.js";
 import * as execSpawn from "../process/exec-spawn.js";
 import * as processExecution from "../process/exec.js";
 import { resetGatewayWorkAdmission } from "../process/gateway-work-admission.js";
-import { withMockedPlatform } from "../test-utils/vitest-spies.js";
 import { runCronCommandJob } from "./command-runner.js";
+import { buildCronCommandShellArgv } from "./command-shell.js";
 import { cronTestJob } from "./service.fixture-builders.test-support.js";
 import type { CronJob } from "./types.js";
 
@@ -377,20 +377,16 @@ it.each(["missing", "transient"])("classifies %s command start failures", async 
   }
 });
 
-it("launches Windows cmd.exe command payloads with a verbatim command line", async () => {
-  const command = '"C:\\Program Files\\nodejs\\node.exe" -e "console.log(1)"';
-  const runCommand = vi
-    .spyOn(processExecution, "runCommandWithTimeout")
-    .mockResolvedValue(makeSpawnResult());
-  try {
-    await withMockedPlatform("win32", () =>
-      runCronCommandJob({ job: makeCommandJob({ argv: ["cmd.exe", "/d", "/s", "/c", command] }) }),
-    );
-    expect(runCommand).toHaveBeenCalledWith(
-      ["cmd.exe", "/d", "/s", "/c", `"${command}"`],
-      expect.objectContaining({ windowsVerbatimArguments: true }),
-    );
-  } finally {
-    runCommand.mockRestore();
-  }
-});
+it.runIf(process.platform === "win32")(
+  "runs a quoted Windows shell command through cmd.exe",
+  async () => {
+    const command = `"${process.execPath}" -e "process.stdout.write('quoted ok')"`;
+    const result = await runCronCommandJob({
+      job: makeCommandJob({
+        argv: buildCronCommandShellArgv(command, "win32"),
+        timeoutSeconds: 10,
+      }),
+    });
+    expectOutcome(result, { status: "ok", summary: "quoted ok" });
+  },
+);
