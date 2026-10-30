@@ -1,0 +1,56 @@
+# Fork-only reproduction for openclaw#141038; never part of the upstream PR.
+name: proof-141038-windows
+on:
+  push:
+    branches: [proof/141038-windows]
+permissions:
+  contents: read
+jobs:
+  windows-cron-shell:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install
+        shell: pwsh
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          npm install -g openclaw@2026.10.9
+      - name: Build this branch
+        shell: pwsh
+        run: pnpm build
+      - name: Proof with the fix
+        shell: pwsh
+        run: ./.github/proof-141038.ps1 fix 18791
+      - name: Upgrade from 2026.10.9 with Doctor
+        if: always()
+        shell: pwsh
+        run: ./.github/proof-141038-upgrade.ps1
+      - name: Native runner test with the fix
+        if: always()
+        shell: pwsh
+        run: node scripts/run-vitest.mjs src/cron/command-runner.test.ts
+      - name: Native runner test with the base runner
+        if: always()
+        shell: pwsh
+        run: |
+          $base = git rev-parse HEAD~4
+          git log -1 --format='base %h %s' $base
+          git checkout $base -- src/cron/command-runner.ts
+          node scripts/run-vitest.mjs src/cron/command-runner.test.ts
+          git checkout HEAD -- src/cron/command-runner.ts
+      - name: Proof on the base commit
+        if: always()
+        shell: pwsh
+        run: |
+          $base = git rev-parse HEAD~4
+          git checkout $base -- src docs
+          Remove-Item src/cron/command-shell.ts -ErrorAction SilentlyContinue
+          pnpm build
+          ./.github/proof-141038.ps1 base 18792
